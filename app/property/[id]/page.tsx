@@ -42,9 +42,14 @@ export default function PropertyDetailsPage() {
     );
   }
 
+  const whatsappLink = `https://wa.me/91${property.contact}?text=${encodeURIComponent(
+    `Hi, I found your property "${property.title}" on DirectNest. Is it still available?`
+  )}`;
+
   return (
     <main className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+
         <div className="h-72 bg-gray-300 rounded-xl flex items-center justify-center text-gray-600 text-xl">
           Property Image
         </div>
@@ -73,19 +78,32 @@ export default function PropertyDetailsPage() {
           📞 Owner Contact: {property.contact}
         </p>
 
-        <div className="mt-8 flex gap-4">
+        <div className="mt-8 flex flex-wrap gap-4">
+
           <Link href="/">
             <button className="bg-gray-700 text-white px-5 py-3 rounded-lg hover:bg-gray-800">
-              Back to Home
+              ⬅ Back to Home
             </button>
           </Link>
 
           <a href={`tel:${property.contact}`}>
             <button className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700">
-              Call Owner
+              📞 Call Owner
             </button>
           </a>
+
+          <a
+            href={whatsappLink}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <button className="bg-green-600 text-white px-5 py-3 rounded-lg hover:bg-green-700">
+              💬 WhatsApp Owner
+            </button>
+          </a>
+
         </div>
+
       </div>
     </main>
   );
