@@ -15,6 +15,7 @@ type Property = {
   type: string;
   description: string;
   contact: string;
+  imageUrl?: string;
 };
 
 export default function Home() {
@@ -65,10 +66,6 @@ export default function Home() {
             Search
           </button>
         </div>
-
-        <button className="mt-8 bg-blue-600 text-white px-8 py-3 rounded-xl text-lg hover:bg-blue-700">
-          Find Room
-        </button>
       </section>
 
       <section className="py-16 px-6">
@@ -87,9 +84,17 @@ export default function Home() {
                 key={property.id}
                 className="bg-white rounded-xl shadow-lg p-5"
               >
-                <div className="bg-gray-300 h-48 rounded-lg flex items-center justify-center text-gray-600">
-                  Property Image
-                </div>
+                {property.imageUrl ? (
+                  <img
+                    src={property.imageUrl}
+                    alt={property.title}
+                    className="w-full h-48 object-cover rounded-lg"
+                  />
+                ) : (
+                  <div className="bg-gray-300 h-48 rounded-lg flex items-center justify-center text-gray-600">
+                    Property Image
+                  </div>
+                )}
 
                 <h3 className="text-2xl font-semibold mt-4">
                   {property.title}

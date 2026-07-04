@@ -21,6 +21,7 @@ type Property = {
   rent: string;
   type: string;
   contact: string;
+  imageUrl?: string;
 };
 
 export default function DashboardPage() {
@@ -123,6 +124,18 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {properties.map((property) => (
                 <div key={property.id} className="border rounded-xl p-5">
+                  {property.imageUrl ? (
+                    <img
+                      src={property.imageUrl}
+                      alt={property.title}
+                      className="w-full h-48 object-cover rounded-lg mb-4"
+                    />
+                  ) : (
+                    <div className="w-full h-48 bg-gray-300 rounded-lg mb-4 flex items-center justify-center text-gray-600">
+                      Property Image
+                    </div>
+                  )}
+
                   <h4 className="text-xl font-bold">{property.title}</h4>
 
                   <p className="text-gray-600 mt-2">
@@ -137,12 +150,21 @@ export default function DashboardPage() {
 
                   <p className="text-gray-600 mt-2">📞 {property.contact}</p>
 
-                  <button
-                    onClick={() => handleDelete(property.id)}
-                    className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-                  >
-                    Delete Property
-                  </button>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Link
+                      href={`/property/${property.id}`}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    >
+                      View Details
+                    </Link>
+
+                    <button
+                      onClick={() => handleDelete(property.id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                    >
+                      Delete Property
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
