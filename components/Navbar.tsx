@@ -19,6 +19,12 @@ export default function Navbar() {
             </button>
           </Link>
 
+          <Link href="/signup">
+            <button className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
+              Signup
+            </button>
+          </Link>
+
           <Link href="/list-property">
             <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
               List Property
