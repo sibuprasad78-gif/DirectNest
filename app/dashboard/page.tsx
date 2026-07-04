@@ -2,8 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { collection, deleteDoc, doc, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 type Property = {
@@ -16,6 +24,8 @@ type Property = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
+
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,15 +51,18 @@ export default function DashboardPage() {
       if (user) {
         fetchMyProperties(user.uid);
       } else {
-        setLoading(false);
+        router.replace("/login");
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [router]);
 
   const handleDelete = async (id: string) => {
-    const confirmDelete = confirm("Are you sure you want to delete this property?");
+    const confirmDelete = confirm(
+      "Are you sure you want to delete this property?"
+    );
+
     if (!confirmDelete) return;
 
     await deleteDoc(doc(db, "properties", id));
@@ -65,6 +78,7 @@ export default function DashboardPage() {
     try {
       await signOut(auth);
       alert("Logged Out Successfully!");
+      router.replace("/login");
     } catch (error: any) {
       alert(error.message);
     }
@@ -110,11 +124,17 @@ export default function DashboardPage() {
               {properties.map((property) => (
                 <div key={property.id} className="border rounded-xl p-5">
                   <h4 className="text-xl font-bold">{property.title}</h4>
-                  <p className="text-gray-600 mt-2">📍 {property.location}</p>
+
+                  <p className="text-gray-600 mt-2">
+                    📍 {property.location}
+                  </p>
+
                   <p className="text-blue-600 font-bold mt-2">
                     ₹{property.rent} / Month
                   </p>
+
                   <p className="text-gray-600 mt-2">🏠 {property.type}</p>
+
                   <p className="text-gray-600 mt-2">📞 {property.contact}</p>
 
                   <button
