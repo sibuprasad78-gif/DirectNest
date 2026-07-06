@@ -5,7 +5,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-
+import ReviewSection from "@/components/reviewsection";
 type Property = {
   title: string;
   location: string;
@@ -226,6 +226,7 @@ export default function PropertyDetailsPage() {
           </Link>
         </div>
       </div>
+      <ReviewSection propertyId={propertyId} />
     </main>
   );
 }
