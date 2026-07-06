@@ -11,44 +11,51 @@ export default function ListPropertyPage() {
   const [type, setType] = useState("");
   const [description, setDescription] = useState("");
   const [contact, setContact] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState("");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const cloudName = "r4pgehpv";
   const uploadPreset = "directnest_upload";
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
 
-    if (!file) return;
-
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-  };
-
-  const uploadImageToCloudinary = async () => {
-    if (!imageFile) return "";
-
-    const formData = new FormData();
-    formData.append("file", imageFile);
-    formData.append("upload_preset", uploadPreset);
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Image upload failed");
+    if (files.length > 10) {
+      alert("You can upload maximum 10 images.");
+      return;
     }
 
-    return data.secure_url;
+    setImageFiles(files);
+    setImagePreviews(files.map((file) => URL.createObjectURL(file)));
+  };
+
+  const uploadImagesToCloudinary = async () => {
+    const uploadedUrls: string[] = [];
+
+    for (const imageFile of imageFiles) {
+      const formData = new FormData();
+      formData.append("file", imageFile);
+      formData.append("upload_preset", uploadPreset);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || "Image upload failed");
+      }
+
+      uploadedUrls.push(data.secure_url);
+    }
+
+    return uploadedUrls;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,7 +69,7 @@ export default function ListPropertyPage() {
     try {
       setLoading(true);
 
-      const imageUrl = await uploadImageToCloudinary();
+      const imageUrls = await uploadImagesToCloudinary();
 
       await addDoc(collection(db, "properties"), {
         title,
@@ -71,7 +78,8 @@ export default function ListPropertyPage() {
         type,
         description,
         contact,
-        imageUrl,
+        imageUrl: imageUrls[0] || "",
+        imageUrls,
         ownerId: auth.currentUser.uid,
         ownerEmail: auth.currentUser.email,
         createdAt: new Date(),
@@ -85,8 +93,8 @@ export default function ListPropertyPage() {
       setType("");
       setDescription("");
       setContact("");
-      setImageFile(null);
-      setImagePreview("");
+      setImageFiles([]);
+      setImagePreviews([]);
     } catch (error: any) {
       alert(error.message);
     } finally {
@@ -165,19 +173,31 @@ export default function ListPropertyPage() {
             required
           />
 
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageChange}
-            className="w-full border rounded-lg px-4 py-3"
-          />
+          <div>
+            <p className="font-semibold mb-2">
+              Upload Property Images (Maximum 10)
+            </p>
 
-          {imagePreview && (
-            <img
-              src={imagePreview}
-              alt="Property Preview"
-              className="w-full h-64 object-cover rounded-xl"
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImagesChange}
+              className="w-full border rounded-lg px-4 py-3"
             />
+          </div>
+
+          {imagePreviews.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {imagePreviews.map((preview, index) => (
+                <img
+                  key={index}
+                  src={preview}
+                  alt={`Property Preview ${index + 1}`}
+                  className="w-full h-32 object-cover rounded-xl"
+                />
+              ))}
+            </div>
           )}
 
           <button

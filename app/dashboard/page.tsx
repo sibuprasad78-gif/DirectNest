@@ -10,6 +10,7 @@ import {
   doc,
   getDocs,
   query,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -24,10 +25,24 @@ type Property = {
   imageUrl?: string;
 };
 
+type VisitRequest = {
+  id: string;
+  propertyId: string;
+  propertyTitle?: string;
+  name: string;
+  phone: string;
+  visitDate: string;
+  visitTime: string;
+  message?: string;
+  status: string;
+  userEmail?: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [properties, setProperties] = useState<Property[]>([]);
+  const [visitRequests, setVisitRequests] = useState<VisitRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchMyProperties = async (userId: string) => {
@@ -38,13 +53,54 @@ export default function DashboardPage() {
 
     const querySnapshot = await getDocs(q);
 
-    const propertyList = querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
+    const propertyList = querySnapshot.docs.map((document) => ({
+      id: document.id,
+      ...document.data(),
     })) as Property[];
 
     setProperties(propertyList);
+
+    await fetchVisitRequests(propertyList);
+
     setLoading(false);
+  };
+
+  const fetchVisitRequests = async (propertyList: Property[]) => {
+    if (propertyList.length === 0) {
+      setVisitRequests([]);
+      return;
+    }
+
+    const snapshot = await getDocs(collection(db, "visitRequests"));
+
+    const myPropertyIds = propertyList.map((property) => property.id);
+
+    const requests = snapshot.docs
+      .map((document) => ({
+        id: document.id,
+        ...document.data(),
+      }))
+      .filter((request: any) => myPropertyIds.includes(request.propertyId))
+      .map((request: any) => {
+        const matchedProperty = propertyList.find(
+          (property) => property.id === request.propertyId
+        );
+
+        return {
+          id: request.id,
+          propertyId: request.propertyId,
+          propertyTitle: matchedProperty?.title || "Property",
+          name: request.name || "",
+          phone: request.phone || "",
+          visitDate: request.visitDate || "",
+          visitTime: request.visitTime || "",
+          message: request.message || "",
+          status: request.status || "Pending",
+          userEmail: request.userEmail || "",
+        };
+      }) as VisitRequest[];
+
+    setVisitRequests(requests);
   };
 
   useEffect(() => {
@@ -75,6 +131,20 @@ export default function DashboardPage() {
     }
   };
 
+  const updateVisitStatus = async (requestId: string, status: string) => {
+    await updateDoc(doc(db, "visitRequests", requestId), {
+      status,
+    });
+
+    setVisitRequests((prev) =>
+      prev.map((request) =>
+        request.id === requestId ? { ...request, status } : request
+      )
+    );
+
+    alert(`Visit request ${status}`);
+  };
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -102,7 +172,7 @@ export default function DashboardPage() {
         <h2 className="text-4xl font-bold">Welcome to DirectNest 👋</h2>
 
         <p className="text-gray-600 mt-2">
-          Manage your properties from here.
+          Manage your properties and visit requests from here.
         </p>
 
         <Link href="/list-property">
@@ -138,9 +208,7 @@ export default function DashboardPage() {
 
                   <h4 className="text-xl font-bold">{property.title}</h4>
 
-                  <p className="text-gray-600 mt-2">
-                    📍 {property.location}
-                  </p>
+                  <p className="text-gray-600 mt-2">📍 {property.location}</p>
 
                   <p className="text-blue-600 font-bold mt-2">
                     ₹{property.rent} / Month
@@ -158,11 +226,79 @@ export default function DashboardPage() {
                       View Details
                     </Link>
 
+                    <Link
+                      href={`/edit-property/${property.id}`}
+                      className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600"
+                    >
+                      Edit Property
+                    </Link>
+
                     <button
                       onClick={() => handleDelete(property.id)}
                       className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                     >
                       Delete Property
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-10 bg-white rounded-xl shadow-md p-8">
+          <h3 className="text-2xl font-bold mb-6">📅 Visit Requests</h3>
+
+          {loading ? (
+            <p className="text-gray-500">Loading visit requests...</p>
+          ) : visitRequests.length === 0 ? (
+            <p className="text-gray-500">No visit requests yet.</p>
+          ) : (
+            <div className="space-y-5">
+              {visitRequests.map((request) => (
+                <div key={request.id} className="border rounded-xl p-5">
+                  <h4 className="text-xl font-bold">
+                    {request.propertyTitle}
+                  </h4>
+
+                  <p className="mt-2">👤 Visitor: {request.name}</p>
+                  <p className="mt-2">📞 Phone: {request.phone}</p>
+                  <p className="mt-2">📧 Email: {request.userEmail}</p>
+                  <p className="mt-2">📅 Date: {request.visitDate}</p>
+                  <p className="mt-2">⏰ Time: {request.visitTime}</p>
+
+                  {request.message && (
+                    <p className="mt-2">📝 Message: {request.message}</p>
+                  )}
+
+                  <p className="mt-3 font-bold">
+                    Status:{" "}
+                    <span
+                      className={
+                        request.status === "Accepted"
+                          ? "text-green-600"
+                          : request.status === "Rejected"
+                          ? "text-red-600"
+                          : "text-yellow-600"
+                      }
+                    >
+                      {request.status}
+                    </span>
+                  </p>
+
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      onClick={() => updateVisitStatus(request.id, "Accepted")}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                    >
+                      Accept
+                    </button>
+
+                    <button
+                      onClick={() => updateVisitStatus(request.id, "Rejected")}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                    >
+                      Reject
                     </button>
                   </div>
                 </div>

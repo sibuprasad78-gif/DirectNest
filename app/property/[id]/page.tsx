@@ -14,6 +14,8 @@ type Property = {
   description: string;
   contact: string;
   imageUrl?: string;
+  imageUrls?: string[];
+  propertyId?: string;
 };
 
 export default function PropertyDetailsPage() {
@@ -21,21 +23,62 @@ export default function PropertyDetailsPage() {
   const propertyId = params.id as string;
 
   const [property, setProperty] = useState<Property | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     const fetchProperty = async () => {
-      const docRef = doc(db, "properties", propertyId);
-      const docSnap = await getDoc(docRef);
+      try {
+        setLoading(true);
+        setNotFound(false);
 
-      if (docSnap.exists()) {
-        setProperty(docSnap.data() as Property);
+        const propertyRef = doc(db, "properties", propertyId);
+        const propertySnap = await getDoc(propertyRef);
+
+        if (propertySnap.exists()) {
+          setProperty(propertySnap.data() as Property);
+          return;
+        }
+
+        const favoriteRef = doc(db, "favorites", propertyId);
+        const favoriteSnap = await getDoc(favoriteRef);
+
+        if (favoriteSnap.exists()) {
+          const favoriteData = favoriteSnap.data() as Property;
+
+          if (favoriteData.propertyId) {
+            const originalPropertyRef = doc(
+              db,
+              "properties",
+              favoriteData.propertyId
+            );
+
+            const originalPropertySnap = await getDoc(originalPropertyRef);
+
+            if (originalPropertySnap.exists()) {
+              setProperty(originalPropertySnap.data() as Property);
+              return;
+            }
+          }
+
+          setProperty(favoriteData);
+          return;
+        }
+
+        setNotFound(true);
+      } catch (error: any) {
+        alert(error.message || "Failed to load property.");
+        setNotFound(true);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchProperty();
   }, [propertyId]);
 
-  if (!property) {
+  if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-100">
         <p className="text-xl text-gray-600">Loading property details...</p>
@@ -43,19 +86,96 @@ export default function PropertyDetailsPage() {
     );
   }
 
+  if (notFound || !property) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100 gap-4">
+        <p className="text-xl text-red-600">Property not found.</p>
+
+        <Link href="/">
+          <button className="bg-blue-600 text-white px-5 py-3 rounded-lg">
+            Back to Home
+          </button>
+        </Link>
+      </main>
+    );
+  }
+
+  const images =
+    property.imageUrls && property.imageUrls.length > 0
+      ? property.imageUrls
+      : property.imageUrl
+      ? [property.imageUrl]
+      : [];
+
+  const nextImage = () => {
+    setCurrentImageIndex((prev) =>
+      prev === images.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  const previousImage = () => {
+    setCurrentImageIndex((prev) =>
+      prev === 0 ? images.length - 1 : prev - 1
+    );
+  };
+
   const whatsappLink = `https://wa.me/91${property.contact}?text=${encodeURIComponent(
     `Hi, I found your property "${property.title}" on DirectNest. Is it still available?`
   )}`;
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
-      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-8">
-        {property.imageUrl ? (
-          <img
-            src={property.imageUrl}
-            alt={property.title}
-            className="w-full h-96 object-cover rounded-xl"
-          />
+      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+        {images.length > 0 ? (
+          <div>
+            <div className="relative">
+              <img
+                src={images[currentImageIndex]}
+                alt={property.title}
+                className="w-full h-96 object-cover rounded-xl"
+              />
+
+              {images.length > 1 && (
+                <>
+                  <button
+                    onClick={previousImage}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 text-white px-4 py-2 rounded-full"
+                  >
+                    ⬅
+                  </button>
+
+                  <button
+                    onClick={nextImage}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 text-white px-4 py-2 rounded-full"
+                  >
+                    ➡
+                  </button>
+
+                  <div className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-full">
+                    {currentImageIndex + 1} / {images.length}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {images.length > 1 && (
+              <div className="grid grid-cols-5 gap-3 mt-4">
+                {images.map((image, index) => (
+                  <img
+                    key={index}
+                    src={image}
+                    alt={`Property ${index + 1}`}
+                    onClick={() => setCurrentImageIndex(index)}
+                    className={`h-20 w-full object-cover rounded-lg cursor-pointer border-4 ${
+                      currentImageIndex === index
+                        ? "border-blue-600"
+                        : "border-transparent"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
           <div className="h-72 bg-gray-300 rounded-xl flex items-center justify-center text-gray-600 text-xl">
             Property Image
@@ -98,6 +218,12 @@ export default function PropertyDetailsPage() {
               💬 WhatsApp Owner
             </button>
           </a>
+
+          <Link href={`/book-visit/${propertyId}`}>
+            <button className="bg-purple-600 text-white px-5 py-3 rounded-lg hover:bg-purple-700">
+              📅 Book Visit
+            </button>
+          </Link>
         </div>
       </div>
     </main>
