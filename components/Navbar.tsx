@@ -1,105 +1,72 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { auth } from "@/lib/firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { Bell, Menu, Plus, User } from "lucide-react";
 
 export default function Navbar() {
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setLoggedIn(!!user);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    window.location.href = "/";
-  };
-
   return (
-    <nav className="bg-white shadow-md sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto flex flex-col lg:flex-row justify-between items-center gap-4 p-5">
-
+    <header className="sticky top-0 z-50 border-b border-slate-100 bg-[#f8fafc]/90 backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 md:px-8">
         <Link href="/">
-          <h1 className="text-3xl font-bold text-blue-600 cursor-pointer">
-            🏠 DirectNest
-          </h1>
+          <Image
+            src="/logo.png"
+            alt="DirectNest"
+            width={220}
+            height={120}
+            priority
+            className="h-auto w-[135px] object-contain md:w-[165px]"
+          />
         </Link>
 
-        <div className="flex flex-wrap justify-center items-center gap-3">
-
-          <Link href="/">
-            <button className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800">
-              🏠 Home
-            </button>
+        <nav className="hidden items-center gap-7 lg:flex">
+          <Link href="/" className="font-bold text-blue-600">
+            Home
           </Link>
 
-          <Link href="/favorites">
-            <button className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">
-              ❤️ Favorites
-            </button>
+          <Link
+            href="/list-property"
+            className="font-semibold text-slate-600 hover:text-blue-600"
+          >
+            List Property
           </Link>
 
-          <Link href="/my-bookings">
-            <button className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700">
-              📅 My Bookings
-            </button>
+          <Link
+            href="/favorites"
+            className="font-semibold text-slate-600 hover:text-blue-600"
+          >
+            Saved
+          </Link>
+        </nav>
+
+        <div className="flex items-center gap-3">
+          <Link
+            href="/list-property"
+            className="hidden h-11 items-center gap-2 rounded-2xl bg-blue-600 px-5 font-bold text-white shadow-lg hover:bg-blue-700 md:flex"
+          >
+            <Plus size={19} />
+            Post
           </Link>
 
-          <Link href="/notifications">
-            <button className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600">
-              🔔 Notifications
-            </button>
+          <Link
+            href="/notifications"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm"
+          >
+            <Bell size={21} className="text-slate-700" />
           </Link>
 
-          <Link href="/profile">
-            <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
-              👤 Profile
-            </button>
+          <Link
+            href="/profile"
+            className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm sm:flex"
+          >
+            <User size={21} className="text-slate-700" />
           </Link>
 
-          <Link href="/dashboard">
-            <button className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600">
-              📊 Dashboard
-            </button>
-          </Link>
-
-          <Link href="/list-property">
-            <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-              ➕ List Property
-            </button>
-          </Link>
-
-          {!loggedIn ? (
-            <>
-              <Link href="/login">
-                <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                  Login
-                </button>
-              </Link>
-
-              <Link href="/signup">
-                <button className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
-                  Signup
-                </button>
-              </Link>
-            </>
-          ) : (
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-            >
-              🚪 Logout
-            </button>
-          )}
-
+          <button className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm lg:hidden">
+            <Menu size={21} className="text-slate-700" />
+          </button>
         </div>
       </div>
-    </nav>
+    </header>
   );
 }

@@ -44,6 +44,9 @@ export default function DashboardPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [visitRequests, setVisitRequests] = useState<VisitRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalFavorites, setTotalFavorites] = useState(0);
+const [totalNotifications, setTotalNotifications] = useState(0);
+const [totalMessages, setTotalMessages] = useState(0);
 
   const fetchMyProperties = async (userId: string) => {
     const q = query(
@@ -59,6 +62,17 @@ export default function DashboardPage() {
     })) as Property[];
 
     setProperties(propertyList);
+    // Total Favorites
+const favoriteSnapshot = await getDocs(collection(db, "favorites"));
+setTotalFavorites(favoriteSnapshot.size);
+
+// Total Notifications
+const notificationSnapshot = await getDocs(collection(db, "notifications"));
+setTotalNotifications(notificationSnapshot.size);
+
+// Total Messages
+const chatSnapshot = await getDocs(collection(db, "chats"));
+setTotalMessages(chatSnapshot.size);
 
     await fetchVisitRequests(propertyList);
 
@@ -145,6 +159,20 @@ export default function DashboardPage() {
     alert(`Visit request ${status}`);
   };
 
+  const totalProperties = properties.length;
+
+  const pendingVisits = visitRequests.filter(
+    (request) => request.status === "Pending"
+  ).length;
+
+  const acceptedVisits = visitRequests.filter(
+    (request) => request.status === "Accepted"
+  ).length;
+
+  const rejectedVisits = visitRequests.filter(
+    (request) => request.status === "Rejected"
+  ).length;
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -174,12 +202,88 @@ export default function DashboardPage() {
         <p className="text-gray-600 mt-2">
           Manage your properties and visit requests from here.
         </p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mt-8">
+
+  <div className="bg-white rounded-xl shadow p-5 text-center">
+    <p className="text-gray-500">Properties</p>
+    <h2 className="text-3xl font-bold text-blue-600">
+      {totalProperties}
+    </h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-5 text-center">
+    <p className="text-gray-500">Pending</p>
+    <h2 className="text-3xl font-bold text-yellow-500">
+      {pendingVisits}
+    </h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-5 text-center">
+    <p className="text-gray-500">Accepted</p>
+    <h2 className="text-3xl font-bold text-green-600">
+      {acceptedVisits}
+    </h2>
+  </div>
+
+  <div className="bg-white rounded-xl shadow p-5 text-center">
+    <p className="text-gray-500">Rejected</p>
+    <h2 className="text-3xl font-bold text-red-600">
+      {rejectedVisits}
+    </h2>
+  </div>
+  <div className="bg-white rounded-xl shadow p-5 text-center">
+  <p className="text-gray-500">Favorites</p>
+  <h2 className="text-3xl font-bold text-pink-600">
+    {totalFavorites}
+  </h2>
+</div>
+
+<div className="bg-white rounded-xl shadow p-5 text-center">
+  <p className="text-gray-500">Notifications</p>
+  <h2 className="text-3xl font-bold text-purple-600">
+    {totalNotifications}
+  </h2>
+</div>
+
+<div className="bg-white rounded-xl shadow p-5 text-center">
+  <p className="text-gray-500">Messages</p>
+  <h2 className="text-3xl font-bold text-indigo-600">
+    {totalMessages}
+  </h2>
+</div>
+
+</div> 
 
         <Link href="/list-property">
           <button className="mt-8 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
             ➕ Add New Property
           </button>
         </Link>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+  <Link href="/favorites">
+    <button className="w-full bg-pink-500 text-white py-3 rounded-lg hover:bg-pink-600">
+      ❤️ Favorites
+    </button>
+  </Link>
+
+  <Link href="/my-bookings">
+    <button className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700">
+      📅 My Bookings
+    </button>
+  </Link>
+
+  <Link href="/notifications">
+    <button className="w-full bg-yellow-500 text-white py-3 rounded-lg hover:bg-yellow-600">
+      🔔 Notifications
+    </button>
+  </Link>
+
+  <Link href="/profile">
+    <button className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700">
+      👤 Profile
+    </button>
+  </Link>
+</div>
 
         <div className="mt-10 bg-white rounded-xl shadow-md p-8">
           <h3 className="text-2xl font-bold mb-6">My Properties</h3>

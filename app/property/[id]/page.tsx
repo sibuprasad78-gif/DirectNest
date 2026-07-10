@@ -1,232 +1,319 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Heart,
+  MapPin,
+  Phone,
+  Share2,
+  MessageCircle,
+} from "lucide-react";
+import Link from "next/link";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import ReviewSection from "@/components/reviewsection";
-type Property = {
-  title: string;
-  location: string;
-  rent: string;
-  type: string;
-  description: string;
-  contact: string;
-  imageUrl?: string;
-  imageUrls?: string[];
-  propertyId?: string;
-};
+
+import PropertyGallery from "@/components/PropertyGallery";
+import OwnerCard from "@/components/OwnerCard";
+import Amenities from "@/components/Amenities";
+import VisitBooking from "@/components/VisitBooking";
+import SimilarProperties from "@/components/SimilarProperties";
 
 export default function PropertyDetailsPage() {
-  const params = useParams();
-  const propertyId = params.id as string;
+  const { id } = useParams();
 
-  const [property, setProperty] = useState<Property | null>(null);
+  const [property, setProperty] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
-    const fetchProperty = async () => {
-      try {
-        setLoading(true);
-        setNotFound(false);
+    async function loadProperty() {
+      if (!id) return;
 
-        const propertyRef = doc(db, "properties", propertyId);
-        const propertySnap = await getDoc(propertyRef);
+      const ref = doc(db, "properties", id as string);
 
-        if (propertySnap.exists()) {
-          setProperty(propertySnap.data() as Property);
-          return;
-        }
+      const snap = await getDoc(ref);
 
-        const favoriteRef = doc(db, "favorites", propertyId);
-        const favoriteSnap = await getDoc(favoriteRef);
-
-        if (favoriteSnap.exists()) {
-          const favoriteData = favoriteSnap.data() as Property;
-
-          if (favoriteData.propertyId) {
-            const originalPropertyRef = doc(
-              db,
-              "properties",
-              favoriteData.propertyId
-            );
-
-            const originalPropertySnap = await getDoc(originalPropertyRef);
-
-            if (originalPropertySnap.exists()) {
-              setProperty(originalPropertySnap.data() as Property);
-              return;
-            }
-          }
-
-          setProperty(favoriteData);
-          return;
-        }
-
-        setNotFound(true);
-      } catch (error: any) {
-        alert(error.message || "Failed to load property.");
-        setNotFound(true);
-      } finally {
-        setLoading(false);
+      if (snap.exists()) {
+        setProperty({
+          id: snap.id,
+          ...snap.data(),
+        });
       }
-    };
 
-    fetchProperty();
-  }, [propertyId]);
+      setLoading(false);
+    }
+
+    loadProperty();
+  }, [id]);
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
-        <p className="text-xl text-gray-600">Loading property details...</p>
+      <main className="min-h-screen flex items-center justify-center">
+        <h2 className="text-xl font-bold">
+          Loading Property...
+        </h2>
       </main>
     );
   }
 
-  if (notFound || !property) {
+  if (!property) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-100 gap-4">
-        <p className="text-xl text-red-600">Property not found.</p>
-
-        <Link href="/">
-          <button className="bg-blue-600 text-white px-5 py-3 rounded-lg">
-            Back to Home
-          </button>
-        </Link>
+      <main className="min-h-screen flex items-center justify-center">
+        <h2 className="text-xl font-bold">
+          Property not found
+        </h2>
       </main>
     );
   }
-
-  const images =
-    property.imageUrls && property.imageUrls.length > 0
-      ? property.imageUrls
-      : property.imageUrl
-      ? [property.imageUrl]
-      : [];
-
-  const nextImage = () => {
-    setCurrentImageIndex((prev) =>
-      prev === images.length - 1 ? 0 : prev + 1
-    );
-  };
-
-  const previousImage = () => {
-    setCurrentImageIndex((prev) =>
-      prev === 0 ? images.length - 1 : prev - 1
-    );
-  };
-
-  const whatsappLink = `https://wa.me/91${property.contact}?text=${encodeURIComponent(
-    `Hi, I found your property "${property.title}" on DirectNest. Is it still available?`
-  )}`;
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6">
-      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-8">
-        {images.length > 0 ? (
-          <div>
-            <div className="relative">
-              <img
-                src={images[currentImageIndex]}
-                alt={property.title}
-                className="w-full h-96 object-cover rounded-xl"
-              />
+    <main className="min-h-screen bg-slate-50">
 
-              {images.length > 1 && (
-                <>
-                  <button
-                    onClick={previousImage}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 text-white px-4 py-2 rounded-full"
-                  >
-                    ⬅
-                  </button>
+      {/* Top Bar */}
 
-                  <button
-                    onClick={nextImage}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 text-white px-4 py-2 rounded-full"
-                  >
-                    ➡
-                  </button>
+      <div className="sticky top-0 z-50 bg-white shadow-sm">
 
-                  <div className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-full">
-                    {currentImageIndex + 1} / {images.length}
-                  </div>
-                </>
-              )}
-            </div>
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
 
-            {images.length > 1 && (
-              <div className="grid grid-cols-5 gap-3 mt-4">
-                {images.map((image, index) => (
-                  <img
-                    key={index}
-                    src={image}
-                    alt={`Property ${index + 1}`}
-                    onClick={() => setCurrentImageIndex(index)}
-                    className={`h-20 w-full object-cover rounded-lg cursor-pointer border-4 ${
-                      currentImageIndex === index
-                        ? "border-blue-600"
-                        : "border-transparent"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
+          <Link
+            href="/"
+            className="flex items-center gap-2 font-bold"
+          >
+            <ArrowLeft />
+            Back
+          </Link>
+
+          <div className="flex gap-3">
+
+            <button className="rounded-full bg-white p-3 shadow">
+              <Heart size={20} />
+            </button>
+
+            <button className="rounded-full bg-white p-3 shadow">
+              <Share2 size={20} />
+            </button>
+
           </div>
-        ) : (
-          <div className="h-72 bg-gray-300 rounded-xl flex items-center justify-center text-gray-600 text-xl">
-            Property Image
-          </div>
-        )}
 
-        <h1 className="text-4xl font-bold mt-6 text-blue-600">
+        </div>
+
+      </div>
+
+      {/* Gallery */}
+
+      <PropertyGallery
+        images={property.imageUrls || []}
+      />
+
+      {/* Main */}
+
+      <section className="mx-auto max-w-7xl px-4 py-8">
+
+        <div className="flex flex-wrap gap-3">
+
+          <span className="rounded-full bg-blue-100 px-4 py-2 font-bold text-blue-700">
+            No Brokerage
+          </span>
+
+          <span className="flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 font-bold text-green-700">
+            <BadgeCheck size={18} />
+            Verified Owner
+          </span>
+
+        </div>
+
+        <h1 className="mt-5 text-4xl font-black">
           {property.title}
         </h1>
 
-        <p className="text-gray-600 mt-3 text-lg">📍 {property.location}</p>
+        <div className="mt-4 flex items-center gap-2 text-slate-500">
 
-        <p className="text-2xl font-bold text-green-600 mt-4">
-          ₹{property.rent} / Month
-        </p>
+          <MapPin size={18} />
 
-        <p className="text-gray-700 mt-4">🏠 Property Type: {property.type}</p>
+          {property.location}
 
-        <p className="text-gray-700 mt-4">📝 {property.description}</p>
+        </div>
 
-        <p className="text-gray-700 mt-4">
-          📞 Owner Contact: {property.contact}
-        </p>
+        <div className="mt-6 text-5xl font-black text-blue-600">
 
-        <div className="mt-8 flex flex-wrap gap-4">
-          <Link href="/">
-            <button className="bg-gray-700 text-white px-5 py-3 rounded-lg hover:bg-gray-800">
-              ⬅ Back to Home
-            </button>
-          </Link>
+          ₹{property.rent}
 
-          <a href={`tel:${property.contact}`}>
-            <button className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700">
-              📞 Call Owner
-            </button>
+          <span className="text-xl text-slate-500">
+            {" "}
+            /month
+          </span>
+
+        </div>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-4">
+
+          <div className="rounded-3xl bg-white p-5 shadow">
+            <p className="text-sm text-slate-500">
+              Bedrooms
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black">
+              {property.bedrooms || 2}
+            </h2>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 shadow">
+            <p className="text-sm text-slate-500">
+              Bathrooms
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black">
+              {property.bathrooms || 2}
+            </h2>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 shadow">
+            <p className="text-sm text-slate-500">
+              Area
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black">
+              {property.area || 1200} sqft
+            </h2>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 shadow">
+            <p className="text-sm text-slate-500">
+              Furnished
+            </p>
+
+            <h2 className="mt-2 text-2xl font-black">
+              {property.furnished || "Semi"}
+            </h2>
+          </div>
+
+        </div>
+
+        <div className="mt-10">
+
+          <h2 className="text-3xl font-black">
+            Description
+          </h2>
+
+          <p className="mt-4 text-lg leading-8 text-slate-600">
+            {property.description}
+          </p>
+
+        </div>
+        <div className="mt-10">
+          <Amenities
+            amenities={
+              Array.isArray(property.amenities)
+                ? property.amenities
+                : [
+                    "24x7 Water",
+                    "Parking",
+                    "CCTV",
+                    "Power Backup",
+                    "Balcony",
+                    "Security",
+                  ]
+            }
+          />
+        </div>
+
+        <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_380px]">
+          <div>
+            <h2 className="text-3xl font-black text-slate-950">
+              Contact Property Owner
+            </h2>
+
+            <p className="mt-2 text-slate-500">
+              Contact the owner directly without paying brokerage.
+            </p>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <a
+                href={`tel:${String(property.contact || "").replace(
+                  /\D/g,
+                  ""
+                )}`}
+                className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-blue-600 font-bold text-white shadow-lg transition hover:bg-blue-700"
+              >
+                <Phone size={20} />
+                Call Owner
+              </a>
+
+              <a
+                href={`https://wa.me/91${String(
+                  property.contact || ""
+                ).replace(/\D/g, "")}?text=${encodeURIComponent(
+                  `Hi, I am interested in your property: ${property.title} at ${property.location}.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-green-600 font-bold text-white shadow-lg transition hover:bg-green-700"
+              >
+                <MessageCircle size={20} />
+                WhatsApp
+              </a>
+
+              <Link
+                href={`/chat/${property.id}`}
+                className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-slate-900 font-bold text-white shadow-lg transition hover:bg-slate-800"
+              >
+                <MessageCircle size={20} />
+                Message
+              </Link>
+            </div>
+
+            <div className="mt-10">
+              <VisitBooking
+                propertyId={property.id}
+                propertyTitle={property.title}
+                ownerContact={property.contact}
+              />
+            </div>
+          </div>
+
+          <OwnerCard
+            ownerName={property.ownerName || "DirectNest Owner"}
+            ownerEmail={property.ownerEmail || ""}
+            contact={property.contact || ""}
+            verified={property.verified !== false}
+          />
+        </div>
+
+        <div className="mt-14">
+          <SimilarProperties
+            currentPropertyId={property.id}
+            propertyType={property.type || ""}
+          />
+        </div>
+      </section>
+
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-2 gap-3">
+          <a
+            href={`tel:${String(property.contact || "").replace(/\D/g, "")}`}
+            className="flex h-13 items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 font-bold text-white"
+          >
+            <Phone size={20} />
+            Call
           </a>
 
-          <a href={whatsappLink} target="_blank" rel="noopener noreferrer">
-            <button className="bg-green-600 text-white px-5 py-3 rounded-lg hover:bg-green-700">
-              💬 WhatsApp Owner
-            </button>
+          <a
+            href={`https://wa.me/91${String(
+              property.contact || ""
+            ).replace(/\D/g, "")}?text=${encodeURIComponent(
+              `Hi, I am interested in your property: ${property.title}.`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-13 items-center justify-center gap-2 rounded-2xl bg-green-600 py-4 font-bold text-white"
+          >
+            <MessageCircle size={20} />
+            WhatsApp
           </a>
-
-          <Link href={`/book-visit/${propertyId}`}>
-            <button className="bg-purple-600 text-white px-5 py-3 rounded-lg hover:bg-purple-700">
-              📅 Book Visit
-            </button>
-          </Link>
         </div>
       </div>
-      <ReviewSection propertyId={propertyId} />
     </main>
   );
 }

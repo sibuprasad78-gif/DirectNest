@@ -1,76 +1,59 @@
-type SearchBarProps = {
+"use client";
+
+import { Search, MapPin } from "lucide-react";
+
+type SearchSectionProps = {
   search: string;
   setSearch: (value: string) => void;
   propertyType: string;
   setPropertyType: (value: string) => void;
-  minRent: string;
-  setMinRent: (value: string) => void;
-  maxRent: string;
-  setMaxRent: (value: string) => void;
-  clearFilters: () => void;
 };
 
-export default function SearchBar({
+export default function SearchSection({
   search,
   setSearch,
   propertyType,
   setPropertyType,
-  minRent,
-  setMinRent,
-  maxRent,
-  setMaxRent,
-  clearFilters,
-}: SearchBarProps) {
+}: SearchSectionProps) {
   return (
-    <section className="-mt-12 relative z-10 px-6">
-      <div className="max-w-7xl mx-auto bg-white rounded-3xl shadow-2xl border border-gray-200 p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-5">
-          🔍 Search Properties
-        </h2>
+    <section className="mx-auto -mt-10 w-full max-w-7xl px-4 md:px-8 relative z-20">
+      <div className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="grid gap-4 lg:grid-cols-[2fr_1fr_auto]">
+          {/* Search */}
+          <div className="relative">
+            <MapPin
+              size={22}
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-blue-600"
+            />
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <input
-            type="text"
-            placeholder="Search city, area, room..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border-2 border-gray-200 rounded-xl px-4 py-4 text-black placeholder:text-gray-500 focus:outline-none focus:border-blue-600"
-          />
+            <input
+              type="text"
+              placeholder="Search city, area or locality..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-[60px] w-full rounded-2xl border-2 border-slate-200 bg-white pl-14 pr-4 text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-600"
+            />
+          </div>
 
+          {/* Property Type */}
           <select
             value={propertyType}
             onChange={(e) => setPropertyType(e.target.value)}
-            className="border-2 border-gray-200 rounded-xl px-4 py-4 text-black focus:outline-none focus:border-blue-600"
+            className="h-[60px] rounded-2xl border-2 border-slate-200 bg-white px-4 font-semibold text-slate-800 outline-none transition focus:border-blue-600"
           >
-            <option value="">All Types</option>
-            <option value="Single Room">Single Room</option>
-            <option value="1 BHK">1 BHK</option>
-            <option value="2 BHK">2 BHK</option>
-            <option value="3 BHK">3 BHK</option>
+            <option value="All">All Types</option>
+            <option value="Room">Room</option>
+            <option value="1BHK">1 BHK</option>
+            <option value="2BHK">2 BHK</option>
+            <option value="Flat">Flat</option>
             <option value="PG">PG</option>
+            <option value="Apartment">Apartment</option>
           </select>
 
-          <input
-            type="number"
-            placeholder="Min Rent"
-            value={minRent}
-            onChange={(e) => setMinRent(e.target.value)}
-            className="border-2 border-gray-200 rounded-xl px-4 py-4 text-black placeholder:text-gray-500 focus:outline-none focus:border-blue-600"
-          />
-
-          <input
-            type="number"
-            placeholder="Max Rent"
-            value={maxRent}
-            onChange={(e) => setMaxRent(e.target.value)}
-            className="border-2 border-gray-200 rounded-xl px-4 py-4 text-black placeholder:text-gray-500 focus:outline-none focus:border-blue-600"
-          />
-
-          <button
-            onClick={clearFilters}
-            className="bg-gray-900 text-white rounded-xl px-6 py-4 hover:bg-black font-semibold"
-          >
-            Clear Filters
+          {/* Search Button */}
+          <button className="flex h-[60px] items-center justify-center gap-2 rounded-2xl bg-blue-600 px-8 font-bold text-white transition hover:bg-blue-700">
+            <Search size={20} />
+            Search
           </button>
         </div>
       </div>
