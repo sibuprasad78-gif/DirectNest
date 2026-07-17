@@ -1,612 +1,686 @@
 "use client";
 
-import { useState } from "react";
+import {
+  ChangeEvent,
+  ComponentType,
+  Dispatch,
+  FormEvent,
+  SetStateAction,
+  useCallback,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import AmenitiesSelector from "@/components/AmenitiesSelector";
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+} from "firebase/firestore";
 import {
   ArrowLeft,
   Building2,
-  CalendarDays,
-  Car,
-  FileText,
-  Home,
-  Image as ImageIcon,
+  CheckCircle2,
   IndianRupee,
-  Mail,
+  Loader2,
   MapPin,
   Phone,
-  Ruler,
-  User,
+  Save,
 } from "lucide-react";
+
+import { db } from "@/lib/firebase";
+import AmenitiesSelector from "@/components/AmenitiesSelector";
+import ImageUploader from "@/components/ImageUploader";
+import LocationPicker from "@/components/LocationPicker";
+
+type PropertyFormData = {
+  title: string;
+  propertyType: string;
+  bhk: string;
+  rent: string;
+  securityDeposit: string;
+  description: string;
+  contact: string;
+};
+
+type CompatibleAmenitiesSelectorProps = {
+  amenities?: string[];
+  setAmenities?: Dispatch<SetStateAction<string[]>>;
+  selectedAmenities?: string[];
+  setSelectedAmenities?: Dispatch<SetStateAction<string[]>>;
+};
+
+const CompatibleAmenitiesSelector =
+  AmenitiesSelector as ComponentType<CompatibleAmenitiesSelectorProps>;
+
+const initialFormData: PropertyFormData = {
+  title: "",
+  propertyType: "",
+  bhk: "",
+  rent: "",
+  securityDeposit: "",
+  description: "",
+  contact: "",
+};
 
 export default function ListPropertyPage() {
   const router = useRouter();
 
-  const [title, setTitle] = useState("");
+  const [formData, setFormData] =
+    useState<PropertyFormData>(initialFormData);
+
+  const [images, setImages] = useState<string[]>([]);
+  const [amenities, setAmenities] = useState<string[]>([]);
+
   const [location, setLocation] = useState("");
-  const [rent, setRent] = useState("");
-  const [securityDeposit, setSecurityDeposit] = useState("");
-  const [type, setType] = useState("1BHK");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
 
-  const [bedrooms, setBedrooms] = useState("1");
-  const [bathrooms, setBathrooms] = useState("1");
-  const [area, setArea] = useState("");
-  const [furnished, setFurnished] = useState("Unfurnished");
-  const [parking, setParking] = useState("No");
-  const [availableFrom, setAvailableFrom] = useState("");
-  const [preferredTenant, setPreferredTenant] = useState("Anyone");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const [ownerName, setOwnerName] = useState("");
-  const [contact, setContact] = useState("");
-  const [whatsappNumber, setWhatsappNumber] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
+  const handleInputChange = (
+    event: ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
+    const { name, value } = event.target;
 
-  const [description, setDescription] = useState("");
-  const [imageUrlsText, setImageUrlsText] = useState("");
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+    setFormData((currentData) => ({
+      ...currentData,
+      [name]: value,
+    }));
 
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error" | "">("");
-
-  const inputClass =
-    "h-[58px] w-full rounded-2xl border-2 border-slate-300 bg-white pl-14 pr-5 text-[16px] font-medium text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100";
-
-  const normalInputClass =
-    "h-[58px] w-full rounded-2xl border-2 border-slate-300 bg-white px-5 text-[16px] font-medium text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100";
-
-  const selectClass =
-    "h-[58px] w-full rounded-2xl border-2 border-slate-300 bg-white px-5 text-[16px] font-semibold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100";
-
-  const iconClass =
-    "pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-slate-700";
-
-  const resetForm = () => {
-    setTitle("");
-    setLocation("");
-    setRent("");
-    setSecurityDeposit("");
-    setType("1BHK");
-
-    setBedrooms("1");
-    setBathrooms("1");
-    setArea("");
-    setFurnished("Unfurnished");
-    setParking("No");
-    setAvailableFrom("");
-    setPreferredTenant("Anyone");
-
-    setOwnerName("");
-    setContact("");
-    setWhatsappNumber("");
-    setOwnerEmail("");
-
-    setDescription("");
-    setImageUrlsText("");
-    setSelectedAmenities([]);
+    setSubmitError("");
+    setSuccessMessage("");
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLocationChange = useCallback(
+    (
+      selectedLocation: string,
+      selectedLatitude: number,
+      selectedLongitude: number
+    ) => {
+      setLocation(selectedLocation);
+      setLatitude(selectedLatitude);
+      setLongitude(selectedLongitude);
+
+      setSubmitError("");
+      setSuccessMessage("");
+    },
+    []
+  );
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  };
+
+  const validateForm = (): string => {
+    if (!formData.title.trim()) {
+      return "Please enter a property title.";
+    }
+
+    if (!formData.propertyType) {
+      return "Please select a property type.";
+    }
+
+    if (!formData.bhk) {
+      return "Please select the property configuration.";
+    }
+
+    const rentAmount = Number(formData.rent);
+
+    if (
+      !formData.rent.trim() ||
+      Number.isNaN(rentAmount) ||
+      rentAmount <= 0
+    ) {
+      return "Please enter a valid monthly rent.";
+    }
+
+    if (formData.securityDeposit.trim()) {
+      const depositAmount = Number(formData.securityDeposit);
+
+      if (
+        Number.isNaN(depositAmount) ||
+        depositAmount < 0
+      ) {
+        return "Please enter a valid security deposit.";
+      }
+    }
+
+    if (!location.trim()) {
+      return "Please select the property location.";
+    }
+
+    if (
+      typeof latitude !== "number" ||
+      !Number.isFinite(latitude) ||
+      typeof longitude !== "number" ||
+      !Number.isFinite(longitude)
+    ) {
+      return "Please select the exact property position on the map.";
+    }
+
+    if (!formData.contact.trim()) {
+      return "Please enter the owner's contact number.";
+    }
+
+    const cleanedContact = formData.contact.replace(/\D/g, "");
+
+    if (
+      cleanedContact.length < 10 ||
+      cleanedContact.length > 12
+    ) {
+      return "Please enter a valid contact number.";
+    }
+
+    if (images.length === 0) {
+      return "Please upload at least one property image.";
+    }
+
+    return "";
+  };
+
+  const resetForm = () => {
+    setFormData(initialFormData);
+    setImages([]);
+    setAmenities([]);
+
+    setLocation("");
+    setLatitude(null);
+    setLongitude(null);
+  };
+
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
     event.preventDefault();
 
-    setMessage("");
-    setMessageType("");
+    setSubmitError("");
+    setSuccessMessage("");
 
-    const cleanContact = contact.replace(/\D/g, "");
-    const cleanWhatsApp = whatsappNumber.replace(/\D/g, "");
+    const validationError = validateForm();
 
-    if (cleanContact.length !== 10) {
-      setMessage("Please enter a valid 10-digit contact number.");
-      setMessageType("error");
+    if (validationError) {
+      setSubmitError(validationError);
+      scrollToTop();
       return;
     }
 
-    if (cleanWhatsApp && cleanWhatsApp.length !== 10) {
-      setMessage("Please enter a valid 10-digit WhatsApp number.");
-      setMessageType("error");
+    if (
+      typeof latitude !== "number" ||
+      !Number.isFinite(latitude) ||
+      typeof longitude !== "number" ||
+      !Number.isFinite(longitude)
+    ) {
+      setSubmitError(
+        "Please select the exact property position on the map."
+      );
+      scrollToTop();
       return;
     }
 
-    if (Number(rent) <= 0) {
-      setMessage("Monthly rent must be greater than zero.");
-      setMessageType("error");
-      return;
-    }
-
-    if (area && Number(area) <= 0) {
-      setMessage("Property area must be greater than zero.");
-      setMessageType("error");
-      return;
-    }
-
-    const imageUrls = imageUrlsText
-      .split("\n")
-      .map((url) => url.trim())
-      .filter((url) => url.length > 0);
-
-    const hasInvalidImageUrl = imageUrls.some((url) => {
-      try {
-        const parsedUrl = new URL(url);
-        return !["http:", "https:"].includes(parsedUrl.protocol);
-      } catch {
-        return true;
-      }
-    });
-
-    if (hasInvalidImageUrl) {
-      setMessage("Please enter valid property image URLs.");
-      setMessageType("error");
-      return;
-    }
-
-    if (imageUrls.length > 5) {
-      setMessage("You can add a maximum of 5 property images.");
-      setMessageType("error");
-      return;
-    }
-
-    setLoading(true);
+    setIsSubmitting(true);
 
     try {
+      const rentAmount = Number(formData.rent);
+
+      const securityDepositAmount =
+        formData.securityDeposit.trim() !== ""
+          ? Number(formData.securityDeposit)
+          : 0;
+
       await addDoc(collection(db, "properties"), {
-        title: title.trim(),
+        title: formData.title.trim(),
+
+        propertyType: formData.propertyType,
+        type: formData.propertyType,
+
+        bhk: formData.bhk,
+
+        rent: rentAmount,
+        monthlyRent: rentAmount,
+
+        securityDeposit: securityDepositAmount,
+
+        description: formData.description.trim(),
+
+        contact: formData.contact.trim(),
+        ownerContact: formData.contact.trim(),
+
+        images,
+        image: images[0] ?? "",
+
+        amenities,
+
         location: location.trim(),
-        rent: Number(rent),
-        securityDeposit: securityDeposit
-          ? Number(securityDeposit)
-          : 0,
-        type,
+        latitude,
+        longitude,
 
-        bedrooms: Number(bedrooms),
-        bathrooms: Number(bathrooms),
-        area: area ? Number(area) : 0,
-        furnished,
-        parking: parking === "Yes",
-        availableFrom: availableFrom || "",
-        preferredTenant,
+        coordinates: {
+          latitude,
+          longitude,
+        },
 
-        ownerName: ownerName.trim(),
-        contact: cleanContact,
-        whatsappNumber: cleanWhatsApp || cleanContact,
-        ownerEmail: ownerEmail.trim(),
+        mapProvider: "OpenStreetMap",
 
-        description: description.trim(),
-        amenities: selectedAmenities,
-        imageUrls,
-
-        status: "Available",
-        verified: false,
         noBrokerage: true,
+        isVerified: false,
+        verifiedOwner: false,
+        status: "active",
+
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
-      setMessage("Property listed successfully!");
-      setMessageType("success");
-
       resetForm();
 
-      setTimeout(() => {
+      setSuccessMessage(
+        "Property listed successfully. Location, latitude and longitude were saved in Firestore."
+      );
+
+      scrollToTop();
+
+      window.setTimeout(() => {
         router.push("/");
       }, 1500);
     } catch (error) {
-      console.error("Property listing error:", error);
-      setMessage("Unable to list property. Please try again.");
-      setMessageType("error");
+      console.error("Property submission error:", error);
+
+      setSubmitError(
+        "Property could not be submitted. Please check your Firestore rules and try again."
+      );
+
+      scrollToTop();
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 px-4 py-6">
-      <div className="mx-auto w-full max-w-5xl">
-        <Link
-          href="/"
-          className="mb-6 inline-flex items-center gap-2 font-bold text-blue-600 transition hover:text-blue-700"
+    <main className="min-h-screen bg-gray-50">
+      <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-gray-600 transition hover:text-blue-700"
         >
-          <ArrowLeft size={20} />
-          Back to Home
-        </Link>
+          <ArrowLeft className="h-5 w-5" />
+          Back
+        </button>
 
-        <div className="rounded-[34px] border border-slate-200 bg-white p-5 shadow-2xl sm:p-7 md:p-9">
-          <header className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-blue-50">
-              <Building2 size={32} className="text-blue-600" />
+        <div className="mb-6">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+            <Building2 className="h-4 w-4" />
+            Direct owner listing
+          </div>
+
+          <h1 className="text-3xl font-bold tracking-tight text-gray-950 sm:text-4xl">
+            List your property
+          </h1>
+
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+            Add complete property details and select the exact map
+            location so renters can find the property easily.
+          </p>
+        </div>
+
+        {successMessage && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 p-4 text-green-800">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+
+            <p className="text-sm font-medium">
+              {successMessage}
+            </p>
+          </div>
+        )}
+
+        {submitError && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+            {submitError}
+          </div>
+        )}
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6"
+          noValidate
+        >
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-gray-950">
+                Basic property details
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-500">
+                Enter the main information renters should see.
+              </p>
             </div>
 
-            <h1 className="mt-4 text-[32px] font-black text-[#0f172a] md:text-[38px]">
-              List Your Property
-            </h1>
+            <div className="space-y-5">
+              <div>
+                <label
+                  htmlFor="title"
+                  className="mb-2 block text-sm font-semibold text-gray-800"
+                >
+                  Property title
+                </label>
 
-            <p className="mx-auto mt-2 max-w-xl text-[16px] font-medium leading-7 text-slate-600">
-              Add complete property details and connect directly with genuine
-              renters without brokerage.
-            </p>
-          </header>
-
-          <form onSubmit={handleSubmit} className="mt-10 space-y-9">
-            {/* Basic information */}
-            <section>
-              <div className="mb-5">
-                <h2 className="text-2xl font-black text-slate-950">
-                  Basic Information
-                </h2>
-
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Add the main information renters will see first.
-                </p>
+                <input
+                  id="title"
+                  name="title"
+                  type="text"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  placeholder="Example: Spacious 2 BHK near Patia"
+                  maxLength={100}
+                  className="h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                />
               </div>
 
-              <div className="grid gap-5">
-                <div className="relative">
-                  <Home className={iconClass} size={22} />
-
-                  <input
-                    type="text"
-                    placeholder="Property Title"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    required
-                    minLength={5}
-                    maxLength={100}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="relative">
-                  <MapPin className={iconClass} size={22} />
-
-                  <input
-                    type="text"
-                    placeholder="Location / Area / City"
-                    value={location}
-                    onChange={(event) => setLocation(event.target.value)}
-                    required
-                    minLength={3}
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="relative">
-                    <IndianRupee className={iconClass} size={22} />
-
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Monthly Rent"
-                      value={rent}
-                      onChange={(event) => setRent(event.target.value)}
-                      required
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div className="relative">
-                    <IndianRupee className={iconClass} size={22} />
-
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Security Deposit"
-                      value={securityDeposit}
-                      onChange={(event) =>
-                        setSecurityDeposit(event.target.value)
-                      }
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <select
-                    value={type}
-                    onChange={(event) => setType(event.target.value)}
-                    className={selectClass}
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="propertyType"
+                    className="mb-2 block text-sm font-semibold text-gray-800"
                   >
-                    <option value="Room">Room</option>
-                    <option value="1BHK">1 BHK</option>
-                    <option value="2BHK">2 BHK</option>
-                    <option value="3BHK">3 BHK</option>
-                    <option value="Flat">Flat</option>
-                    <option value="PG">PG</option>
-                    <option value="Apartment">Apartment</option>
-                    <option value="House">Independent House</option>
+                    Property type
+                  </label>
+
+                  <select
+                    id="propertyType"
+                    name="propertyType"
+                    value={formData.propertyType}
+                    onChange={handleInputChange}
+                    className="h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option value="">
+                      Select property type
+                    </option>
+                    <option value="Apartment">
+                      Apartment
+                    </option>
+                    <option value="Independent House">
+                      Independent House
+                    </option>
+                    <option value="Villa">
+                      Villa
+                    </option>
+                    <option value="Room">
+                      Single Room
+                    </option>
+                    <option value="PG">
+                      PG
+                    </option>
+                    <option value="Hostel">
+                      Hostel
+                    </option>
+                    <option value="Office">
+                      Office
+                    </option>
+                    <option value="Shop">
+                      Shop
+                    </option>
                   </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="bhk"
+                    className="mb-2 block text-sm font-semibold text-gray-800"
+                  >
+                    Configuration
+                  </label>
 
                   <select
-                    value={preferredTenant}
-                    onChange={(event) =>
-                      setPreferredTenant(event.target.value)
-                    }
-                    className={selectClass}
+                    id="bhk"
+                    name="bhk"
+                    value={formData.bhk}
+                    onChange={handleInputChange}
+                    className="h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-sm text-gray-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                   >
-                    <option value="Anyone">Preferred Tenant: Anyone</option>
-                    <option value="Family">Family</option>
-                    <option value="Bachelor">Bachelor</option>
-                    <option value="Female">Female</option>
-                    <option value="Male">Male</option>
-                    <option value="Working Professional">
-                      Working Professional
+                    <option value="">
+                      Select configuration
+                    </option>
+                    <option value="1 RK">
+                      1 RK
+                    </option>
+                    <option value="1 BHK">
+                      1 BHK
+                    </option>
+                    <option value="2 BHK">
+                      2 BHK
+                    </option>
+                    <option value="3 BHK">
+                      3 BHK
+                    </option>
+                    <option value="4 BHK">
+                      4 BHK
+                    </option>
+                    <option value="4+ BHK">
+                      4+ BHK
+                    </option>
+                    <option value="Single Room">
+                      Single Room
+                    </option>
+                    <option value="Shared Room">
+                      Shared Room
+                    </option>
+                    <option value="Not Applicable">
+                      Not Applicable
                     </option>
                   </select>
                 </div>
               </div>
-            </section>
 
-            <div className="h-px bg-slate-200" />
-
-            {/* Property details */}
-            <section>
-              <div className="mb-5">
-                <h2 className="text-2xl font-black text-slate-950">
-                  Property Details
-                </h2>
-
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Provide accurate specifications of the property.
-                </p>
-              </div>
-
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                <select
-                  value={bedrooms}
-                  onChange={(event) => setBedrooms(event.target.value)}
-                  className={selectClass}
-                >
-                  <option value="0">No Separate Bedroom</option>
-                  <option value="1">1 Bedroom</option>
-                  <option value="2">2 Bedrooms</option>
-                  <option value="3">3 Bedrooms</option>
-                  <option value="4">4 Bedrooms</option>
-                  <option value="5">5+ Bedrooms</option>
-                </select>
-
-                <select
-                  value={bathrooms}
-                  onChange={(event) => setBathrooms(event.target.value)}
-                  className={selectClass}
-                >
-                  <option value="1">1 Bathroom</option>
-                  <option value="2">2 Bathrooms</option>
-                  <option value="3">3 Bathrooms</option>
-                  <option value="4">4+ Bathrooms</option>
-                </select>
-
-                <div className="relative">
-                  <Ruler className={iconClass} size={22} />
-
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="Area in sq ft"
-                    value={area}
-                    onChange={(event) => setArea(event.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-
-                <select
-                  value={furnished}
-                  onChange={(event) => setFurnished(event.target.value)}
-                  className={selectClass}
-                >
-                  <option value="Unfurnished">Unfurnished</option>
-                  <option value="Semi Furnished">Semi Furnished</option>
-                  <option value="Fully Furnished">Fully Furnished</option>
-                </select>
-
-                <div className="relative">
-                  <Car className={iconClass} size={22} />
-
-                  <select
-                    value={parking}
-                    onChange={(event) => setParking(event.target.value)}
-                    className={`${selectClass} pl-14`}
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="rent"
+                    className="mb-2 block text-sm font-semibold text-gray-800"
                   >
-                    <option value="No">No Parking</option>
-                    <option value="Yes">Parking Available</option>
-                  </select>
-                </div>
-
-                <div className="relative">
-                  <CalendarDays className={iconClass} size={22} />
-
-                  <input
-                    type="date"
-                    value={availableFrom}
-                    onChange={(event) => setAvailableFrom(event.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <div className="h-px bg-slate-200" />
-
-            {/* Owner information */}
-            <section>
-              <div className="mb-5">
-                <h2 className="text-2xl font-black text-slate-950">
-                  Owner Information
-                </h2>
-
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  These details will help renters contact you directly.
-                </p>
-              </div>
-
-              <div className="grid gap-5">
-                <div className="relative">
-                  <User className={iconClass} size={22} />
-
-                  <input
-                    type="text"
-                    placeholder="Owner Full Name"
-                    value={ownerName}
-                    onChange={(event) => setOwnerName(event.target.value)}
-                    required
-                    className={inputClass}
-                  />
-                </div>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="relative">
-                    <Phone className={iconClass} size={22} />
-
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      maxLength={10}
-                      placeholder="Contact Number"
-                      value={contact}
-                      onChange={(event) =>
-                        setContact(
-                          event.target.value.replace(/\D/g, "").slice(0, 10)
-                        )
-                      }
-                      required
-                      className={inputClass}
-                    />
-                  </div>
+                    Monthly rent
+                  </label>
 
                   <div className="relative">
-                    <Phone className={iconClass} size={22} />
+                    <IndianRupee className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
 
                     <input
-                      type="tel"
+                      id="rent"
+                      name="rent"
+                      type="number"
+                      value={formData.rent}
+                      onChange={handleInputChange}
+                      placeholder="10000"
+                      min="1"
                       inputMode="numeric"
-                      maxLength={10}
-                      placeholder="WhatsApp Number"
-                      value={whatsappNumber}
-                      onChange={(event) =>
-                        setWhatsappNumber(
-                          event.target.value.replace(/\D/g, "").slice(0, 10)
-                        )
-                      }
-                      className={inputClass}
+                      className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-12 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                     />
                   </div>
                 </div>
 
-                <div className="relative">
-                  <Mail className={iconClass} size={22} />
+                <div>
+                  <label
+                    htmlFor="securityDeposit"
+                    className="mb-2 block text-sm font-semibold text-gray-800"
+                  >
+                    Security deposit
+                  </label>
 
-                  <input
-                    type="email"
-                    placeholder="Owner Email Address"
-                    value={ownerEmail}
-                    onChange={(event) => setOwnerEmail(event.target.value)}
-                    className={inputClass}
-                  />
+                  <div className="relative">
+                    <IndianRupee className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+
+                    <input
+                      id="securityDeposit"
+                      name="securityDeposit"
+                      type="number"
+                      value={formData.securityDeposit}
+                      onChange={handleInputChange}
+                      placeholder="Optional"
+                      min="0"
+                      inputMode="numeric"
+                      className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-12 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                    />
+                  </div>
                 </div>
               </div>
-            </section>
 
-            <div className="h-px bg-slate-200" />
-
-            {/* Amenities selector */}
-            <AmenitiesSelector
-              selectedAmenities={selectedAmenities}
-              setSelectedAmenities={setSelectedAmenities}
-            />
-
-            {/* Description */}
-            <section>
-              <div className="mb-4">
-                <h2 className="text-2xl font-black text-slate-950">
-                  Property Description
-                </h2>
-
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Explain important information about the property.
-                </p>
-              </div>
-
-              <div className="relative">
-                <FileText
-                  className="pointer-events-none absolute left-5 top-5 text-slate-700"
-                  size={22}
-                />
+              <div>
+                <label
+                  htmlFor="description"
+                  className="mb-2 block text-sm font-semibold text-gray-800"
+                >
+                  Property description
+                </label>
 
                 <textarea
-                  placeholder="Describe the property, nearby facilities, rules and other useful information..."
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  required
-                  minLength={20}
-                  rows={6}
-                  className="w-full rounded-2xl border-2 border-slate-300 bg-white py-4 pl-14 pr-5 text-[16px] font-medium text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  placeholder="Describe the property, nearby places, floor, furnishing and availability..."
+                  rows={5}
+                  maxLength={1500}
+                  className="w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                 />
-              </div>
-            </section>
 
-            {/* Images */}
-            <section>
-              <div className="mb-4">
-                <h2 className="flex items-center gap-2 text-2xl font-black text-slate-950">
-                  <ImageIcon size={24} className="text-blue-600" />
-                  Property Images
+                <p className="mt-1 text-right text-xs text-gray-400">
+                  {formData.description.length}/1500
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="rounded-xl bg-blue-50 p-2.5">
+                <MapPin className="h-5 w-5 text-blue-700" />
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-gray-950">
+                  Exact property location
                 </h2>
 
-                <p className="mt-1 text-sm font-medium text-slate-500">
-                  Add up to 5 Cloudinary or Unsplash image URLs.
+                <p className="mt-1 text-sm text-gray-500">
+                  Location, latitude and longitude will be saved in
+                  Firestore.
                 </p>
               </div>
+            </div>
 
-              <textarea
-                placeholder={`Paste one image URL per line\nhttps://res.cloudinary.com/...\nhttps://images.unsplash.com/...`}
-                value={imageUrlsText}
-                onChange={(event) => setImageUrlsText(event.target.value)}
-                rows={5}
-                className="w-full rounded-2xl border-2 border-slate-300 bg-white p-5 text-[16px] font-medium text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-              />
+            <LocationPicker
+              location={location}
+              latitude={latitude}
+              longitude={longitude}
+              onLocationChange={handleLocationChange}
+            />
+          </section>
 
-              <div className="mt-3 flex flex-col gap-1 text-sm font-medium text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                <p>Each image URL should be placed on a separate line.</p>
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-gray-950">
+                Property images
+              </h2>
 
-                <p>
-                  {
-                    imageUrlsText
-                      .split("\n")
-                      .map((url) => url.trim())
-                      .filter(Boolean).length
-                  }
-                  /5 images
+              <p className="mt-1 text-sm text-gray-500">
+                Upload clear images of the room, building and
+                surrounding area.
+              </p>
+            </div>
+
+            <ImageUploader
+              images={images}
+              setImages={setImages}
+            />
+          </section>
+
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-gray-950">
+                Available amenities
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-500">
+                Select all facilities available with this property.
+              </p>
+            </div>
+
+            <CompatibleAmenitiesSelector
+              amenities={amenities}
+              setAmenities={setAmenities}
+              selectedAmenities={amenities}
+              setSelectedAmenities={setAmenities}
+            />
+          </section>
+
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-7">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="rounded-xl bg-green-50 p-2.5">
+                <Phone className="h-5 w-5 text-green-700" />
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-gray-950">
+                  Owner contact
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Renters will use this number to contact the owner
+                  directly.
                 </p>
               </div>
-            </section>
+            </div>
 
-            {message && (
-              <div
-                className={`rounded-2xl p-4 text-center text-sm font-bold ${
-                  messageType === "success"
-                    ? "border border-green-200 bg-green-50 text-green-700"
-                    : "border border-red-200 bg-red-50 text-red-600"
-                }`}
+            <div>
+              <label
+                htmlFor="contact"
+                className="mb-2 block text-sm font-semibold text-gray-800"
               >
-                {message}
-              </div>
-            )}
+                Contact number
+              </label>
 
+              <div className="relative">
+                <Phone className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+
+                <input
+                  id="contact"
+                  name="contact"
+                  type="tel"
+                  value={formData.contact}
+                  onChange={handleInputChange}
+                  placeholder="Enter 10-digit mobile number"
+                  inputMode="tel"
+                  maxLength={15}
+                  className="h-12 w-full rounded-xl border border-gray-300 bg-white pl-12 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="sticky bottom-4 z-20 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-xl backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
             <button
               type="submit"
-              disabled={loading}
-              className="h-[62px] w-full rounded-2xl bg-blue-600 text-lg font-bold text-white shadow-lg transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSubmitting}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 text-base font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? "Listing Property..." : "Post Property"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Saving property...
+                </>
+              ) : (
+                <>
+                  <Save className="h-5 w-5" />
+                  Post property
+                </>
+              )}
             </button>
-
-            <p className="text-center text-sm font-medium text-slate-500">
-              Your property will be reviewed before receiving the verified
-              badge.
-            </p>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </main>
   );
