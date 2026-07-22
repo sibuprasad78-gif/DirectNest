@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertCircle,
   BadgeCheck,
   Building2,
   Home,
+  Loader2,
+  RefreshCw,
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  QueryDocumentSnapshot,
+  DocumentData,
+} from "firebase/firestore";
 
 import { db } from "@/lib/firebase";
 import Navbar from "@/components/Navbar";
@@ -19,320 +29,698 @@ import FilterChips from "@/components/FilterChips";
 import PropertyCard, { Property } from "@/components/PropertyCard";
 import BottomNav from "@/components/BottomNav";
 
+type PropertyTypeFilter =
+  | "All"
+  | "Room"
+  | "1BHK"
+  | "2BHK"
+  | "3BHK"
+  | "PG";
+
+type SortOption = "latest" | "rent-low" | "rent-high";
+
+const PROPERTY_FILTERS: PropertyTypeFilter[] = [
+  "All",
+  "Room",
+  "1BHK",
+  "2BHK",
+  "3BHK",
+  "PG",
+];
+
+function normalizeText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsedValue = Number(value.replace(/[^\d.-]/g, ""));
+
+    if (Number.isFinite(parsedValue)) {
+      return parsedValue;
+    }
+  }
+
+  return 0;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value.toLowerCase() === "true";
+  }
+
+  return false;
+}
+
+function normalizePropertyType(value: unknown): string {
+  const propertyType = normalizeText(value);
+
+  if (!propertyType) {
+    return "Room";
+  }
+
+  const compactType = propertyType
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/-/g, "");
+
+  const typeMap: Record<string, string> = {
+    room: "Room",
+    singleroom: "Room",
+    "1room": "Room",
+    "1bhk": "1BHK",
+    onebhk: "1BHK",
+    "2bhk": "2BHK",
+    twobhk: "2BHK",
+    "3bhk": "3BHK",
+    threebhk: "3BHK",
+    pg: "PG",
+    hostel: "PG",
+    payingguest: "PG",
+  };
+
+  return typeMap[compactType] ?? propertyType;
+}
+
+function getCreatedAtMilliseconds(value: unknown): number {
+  if (
+    value &&
+    typeof value === "object" &&
+    "toMillis" in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    try {
+      return (value as { toMillis: () => number }).toMillis();
+    } catch {
+      return 0;
+    }
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    "seconds" in value &&
+    typeof (value as { seconds?: unknown }).seconds === "number"
+  ) {
+    return (value as { seconds: number }).seconds * 1000;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  return 0;
+}
+
+function mapPropertyDocument(
+  documentSnapshot: QueryDocumentSnapshot<DocumentData>
+): Property {
+  const data = documentSnapshot.data();
+
+  const imageUrls = normalizeStringArray(
+    data.imageUrls ?? data.images ?? data.photos
+  );
+
+  const primaryImage = normalizeText(
+    data.imageUrl ?? data.image ?? data.thumbnail
+  );
+
+  const images =
+    imageUrls.length > 0
+      ? imageUrls
+      : primaryImage
+        ? [primaryImage]
+        : [];
+
+  const location =
+    normalizeText(data.location) ||
+    normalizeText(data.address) ||
+    normalizeText(data.city) ||
+    "Location not provided";
+
+  const contact =
+    normalizeText(data.contact) ||
+    normalizeText(data.phone) ||
+    normalizeText(data.phoneNumber) ||
+    normalizeText(data.mobile) ||
+    normalizeText(data.whatsapp);
+
+  return {
+    id: documentSnapshot.id,
+    ...data,
+    title:
+      normalizeText(data.title) ||
+      `${normalizePropertyType(data.type ?? data.propertyType)} for Rent`,
+    location,
+    address: normalizeText(data.address) || location,
+    rent: normalizeNumber(
+      data.rent ?? data.monthlyRent ?? data.price ?? data.amount
+    ),
+    type: normalizePropertyType(data.type ?? data.propertyType),
+    description:
+      normalizeText(data.description) ||
+      normalizeText(data.details) ||
+      "Contact the property owner directly for complete details.",
+    contact,
+    imageUrls: images,
+    images,
+    amenities: normalizeStringArray(data.amenities),
+    latitude: normalizeNumber(data.latitude ?? data.lat),
+    longitude: normalizeNumber(data.longitude ?? data.lng),
+    verified:
+      normalizeBoolean(data.verified) ||
+      normalizeBoolean(data.isVerified) ||
+      normalizeBoolean(data.verifiedOwner),
+    isVerified:
+      normalizeBoolean(data.isVerified) ||
+      normalizeBoolean(data.verified) ||
+      normalizeBoolean(data.verifiedOwner),
+    noBrokerage:
+      data.noBrokerage === undefined
+        ? true
+        : normalizeBoolean(data.noBrokerage),
+    createdAt: data.createdAt ?? null,
+  } as Property;
+}
+
 export default function HomePage() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [search, setSearch] = useState("");
-  const [propertyType, setPropertyType] = useState("All");
-  const [selectedFilter, setSelectedFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFilter, setSelectedFilter] =
+    useState<PropertyTypeFilter>("All");
+  const [sortOption, setSortOption] = useState<SortOption>("latest");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const fetchProperties = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false;
 
-  useEffect(() => {
-    async function fetchProperties() {
-      setLoading(true);
-      setError("");
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      setError(null);
 
       try {
-        const querySnapshot = await getDocs(collection(db, "properties"));
+        let propertyDocuments: QueryDocumentSnapshot<DocumentData>[] = [];
 
-        const propertyList = querySnapshot.docs.map((document) => {
-          const data = document.data();
+        try {
+          const propertiesQuery = query(
+            collection(db, "properties"),
+            orderBy("createdAt", "desc")
+          );
 
-          return {
-            id: document.id,
-            title: String(data.title || ""),
-            location: String(data.location || ""),
-            rent: String(data.rent || ""),
-            type: String(data.type || ""),
-            description: String(data.description || ""),
-            contact: String(data.contact || ""),
-            imageUrls: Array.isArray(data.imageUrls)
-              ? data.imageUrls.filter(
-                  (image): image is string => typeof image === "string"
-                )
-              : [],
-          };
-        });
+          const orderedSnapshot = await getDocs(propertiesQuery);
+          propertyDocuments = orderedSnapshot.docs;
+        } catch (orderedQueryError) {
+          console.warn(
+            "Could not load properties using createdAt ordering. Falling back to an unordered query.",
+            orderedQueryError
+          );
 
-        setProperties(propertyList);
+          const fallbackSnapshot = await getDocs(
+            collection(db, "properties")
+          );
+
+          propertyDocuments = fallbackSnapshot.docs;
+        }
+
+        const loadedProperties = propertyDocuments
+          .map(mapPropertyDocument)
+          .sort(
+            (firstProperty, secondProperty) =>
+              getCreatedAtMilliseconds(
+                (secondProperty as Property & { createdAt?: unknown }).createdAt
+              ) -
+              getCreatedAtMilliseconds(
+                (firstProperty as Property & { createdAt?: unknown }).createdAt
+              )
+          );
+
+        setProperties(loadedProperties);
+        setLastUpdatedAt(Date.now());
       } catch (fetchError) {
-        console.error("Error fetching properties:", fetchError);
-        setError("Properties could not be loaded. Please refresh the page.");
+        console.error("Failed to load properties:", fetchError);
+
+        setError(
+          "We could not load properties right now. Please check your internet connection and try again."
+        );
       } finally {
-        setLoading(false);
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
-    }
+    },
+    []
+  );
 
-    fetchProperties();
-  }, []);
+  useEffect(() => {
+    void fetchProperties();
+  }, [fetchProperties]);
 
-  const normalizeText = (value: string) =>
-    value.toLowerCase().replace(/\s+/g, "").trim();
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void fetchProperties({ silent: true });
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        lastUpdatedAt &&
+        Date.now() - lastUpdatedAt > 60_000
+      ) {
+        void fetchProperties({ silent: true });
+      }
+    };
+
+    const handleOnline = () => {
+      if (error) {
+        void fetchProperties({ silent: true });
+      }
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      );
+    };
+  }, [error, fetchProperties, lastUpdatedAt]);
 
   const filteredProperties = useMemo(() => {
-    const searchValue = search.toLowerCase().trim();
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
-    return properties.filter((property) => {
-      const searchableText = [
+    const matchingProperties = properties.filter((property) => {
+      const propertyType = normalizePropertyType(
+        (property as Property & { type?: unknown }).type
+      );
+
+      const matchesSelectedFilter =
+        selectedFilter === "All" ||
+        propertyType.toLowerCase() === selectedFilter.toLowerCase();
+
+      if (!matchesSelectedFilter) {
+        return false;
+      }
+
+      if (!normalizedSearchQuery) {
+        return true;
+      }
+
+      const searchableContent = [
         property.title,
         property.location,
-        property.type,
+        (property as Property & { address?: string }).address,
         property.description,
+        propertyType,
+        ...(Array.isArray(property.amenities)
+          ? property.amenities
+          : []),
       ]
+        .filter((value): value is string => typeof value === "string")
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch =
-        searchValue.length === 0 || searchableText.includes(searchValue);
-
-      const matchesDropdown =
-        propertyType === "All" ||
-        normalizeText(property.type || "") === normalizeText(propertyType);
-
-      const matchesChip =
-        selectedFilter === "All" ||
-        normalizeText(property.type || "") === normalizeText(selectedFilter);
-
-      return matchesSearch && matchesDropdown && matchesChip;
+      return searchableContent.includes(normalizedSearchQuery);
     });
-  }, [properties, search, propertyType, selectedFilter]);
 
-  const handlePropertyTypeChange = (value: string) => {
-    setPropertyType(value);
+    return [...matchingProperties].sort((firstProperty, secondProperty) => {
+      const firstRent = normalizeNumber(firstProperty.rent);
+      const secondRent = normalizeNumber(secondProperty.rent);
 
-    if (value !== "All") {
-      setSelectedFilter("All");
-    }
+      if (sortOption === "rent-low") {
+        return firstRent - secondRent;
+      }
+
+      if (sortOption === "rent-high") {
+        return secondRent - firstRent;
+      }
+
+      return (
+        getCreatedAtMilliseconds(
+          (secondProperty as Property & { createdAt?: unknown }).createdAt
+        ) -
+        getCreatedAtMilliseconds(
+          (firstProperty as Property & { createdAt?: unknown }).createdAt
+        )
+      );
+    });
+  }, [properties, searchQuery, selectedFilter, sortOption]);
+
+  const verifiedPropertyCount = useMemo(() => {
+    return properties.filter((property) => {
+      const propertyData = property as Property & {
+        verified?: boolean;
+        isVerified?: boolean;
+        verifiedOwner?: boolean;
+      };
+
+      return Boolean(
+        propertyData.verified ||
+          propertyData.isVerified ||
+          propertyData.verifiedOwner
+      );
+    }).length;
+  }, [properties]);
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedFilter("All");
+    setSortOption("latest");
   };
 
-  const handleChipChange = (value: string) => {
-    setSelectedFilter(value);
-
-    if (value !== "All") {
-      setPropertyType("All");
-    }
-  };
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 ||
+    selectedFilter !== "All" ||
+    sortOption !== "latest";
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] pb-24 lg:pb-12">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Navbar />
 
-      <Hero />
+      <main className="pb-28 md:pb-12">
+        <Hero />
 
-      <SearchSection
-        search={search}
-        setSearch={setSearch}
-        propertyType={propertyType}
-        setPropertyType={handlePropertyTypeChange}
-      />
+        <section
+          id="find-property"
+          className="relative z-20 mx-auto -mt-5 w-full max-w-7xl px-4 sm:px-6 lg:px-8"
+        >
+          <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_18px_60px_rgba(15,23,42,0.10)] sm:p-6">
+            <SearchSection
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+            />
 
-      <section className="mx-auto mt-8 w-full max-w-7xl px-4 md:px-8">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-5">
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50">
-              <Home size={22} className="text-blue-600" />
+            <div className="mt-4">
+              <FilterChips
+                selectedFilter={selectedFilter}
+                setSelectedFilter={setSelectedFilter}
+              />
             </div>
-
-            <p className="mt-4 text-2xl font-black text-slate-950">
-              {properties.length}+
-            </p>
-
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              Properties
-            </p>
           </div>
+        </section>
 
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-green-50">
-              <BadgeCheck size={22} className="text-green-600" />
-            </div>
+        <section className="mx-auto mt-8 w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <Building2 className="h-5 w-5" />
+                </div>
 
-            <p className="mt-4 text-2xl font-black text-slate-950">Verified</p>
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-slate-950 sm:text-2xl">
+                    {isLoading ? "—" : `${properties.length}+`}
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 sm:text-sm">
+                    Properties
+                  </p>
+                </div>
+              </div>
+            </article>
 
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              Property Owners
-            </p>
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <BadgeCheck className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-slate-950 sm:text-2xl">
+                    {isLoading
+                      ? "—"
+                      : verifiedPropertyCount > 0
+                        ? `${verifiedPropertyCount}+`
+                        : "Verified"}
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 sm:text-sm">
+                    Property Owners
+                  </p>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                  <Users className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-slate-950 sm:text-2xl">
+                    Direct
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 sm:text-sm">
+                    Owner Contact
+                  </p>
+                </div>
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xl font-bold text-slate-950 sm:text-2xl">
+                    ₹0
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500 sm:text-sm">
+                    Brokerage Fee
+                  </p>
+                </div>
+              </div>
+            </article>
           </div>
+        </section>
 
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-50">
-              <Users size={22} className="text-purple-600" />
-            </div>
-
-            <p className="mt-4 text-2xl font-black text-slate-950">Direct</p>
-
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              Owner Contact
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50">
-              <ShieldCheck size={22} className="text-orange-600" />
-            </div>
-
-            <p className="mt-4 text-2xl font-black text-slate-950">₹0</p>
-
-            <p className="mt-1 text-sm font-semibold text-slate-500">
-              Brokerage Fee
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <FilterChips
-        selectedFilter={selectedFilter}
-        setSelectedFilter={handleChipChange}
-      />
-
-      <section
-        id="properties"
-        className="mx-auto mt-8 w-full max-w-7xl px-4 md:px-8"
-      >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.15em] text-blue-600">
-              Explore Homes
-            </p>
-
-            <h2 className="mt-1 text-[26px] font-black text-[#0f172a] md:text-[32px]">
-              Available Properties
-            </h2>
-
-            {!loading && !error && (
-              <p className="mt-1 text-sm font-medium text-slate-500">
-                {filteredProperties.length}{" "}
-                {filteredProperties.length === 1
-                  ? "property found"
-                  : "properties found"}
+        <section className="mx-auto mt-10 w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-600">
+                Find your next home
               </p>
-            )}
+
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                  Available Properties
+                </h2>
+
+                {!isLoading && (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                    {filteredProperties.length}
+                  </span>
+                )}
+              </div>
+
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                Explore brokerage-free properties and connect directly with
+                property owners.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="property-sort" className="sr-only">
+                Sort properties
+              </label>
+
+              <select
+                id="property-sort"
+                value={sortOption}
+                onChange={(event) =>
+                  setSortOption(event.target.value as SortOption)
+                }
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+              >
+                <option value="latest">Latest first</option>
+                <option value="rent-low">Rent: low to high</option>
+                <option value="rent-high">Rent: high to low</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => void fetchProperties({ silent: true })}
+                disabled={isLoading || isRefreshing}
+                aria-label="Refresh properties"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
-          {(search || propertyType !== "All" || selectedFilter !== "All") && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setPropertyType("All");
-                setSelectedFilter("All");
-              }}
-              className="w-fit rounded-xl bg-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-300"
-            >
-              Clear Filters
-            </button>
+          {isRefreshing && properties.length > 0 && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Updating available properties...
+            </div>
           )}
-        </div>
 
-        <div className="mt-6">
-          {loading ? (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {[1, 2, 3].map((item) => (
+          {isLoading ? (
+            <div
+              className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3"
+              aria-label="Loading properties"
+            >
+              {Array.from({ length: 6 }).map((_, index) => (
                 <div
-                  key={item}
-                  className="overflow-hidden rounded-[30px] bg-white shadow-sm"
+                  key={index}
+                  className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <div className="h-52 animate-pulse bg-slate-200" />
+                  <div className="aspect-[16/10] animate-pulse bg-slate-200" />
 
                   <div className="space-y-4 p-5">
-                    <div className="h-6 w-3/4 animate-pulse rounded-lg bg-slate-200" />
-                    <div className="h-4 w-1/2 animate-pulse rounded-lg bg-slate-200" />
-                    <div className="h-4 w-full animate-pulse rounded-lg bg-slate-200" />
-                    <div className="h-12 w-full animate-pulse rounded-2xl bg-slate-200" />
+                    <div className="flex gap-2">
+                      <div className="h-6 w-24 animate-pulse rounded-full bg-slate-200" />
+                      <div className="h-6 w-28 animate-pulse rounded-full bg-slate-200" />
+                    </div>
+
+                    <div className="h-6 w-4/5 animate-pulse rounded-lg bg-slate-200" />
+                    <div className="h-4 w-3/5 animate-pulse rounded-lg bg-slate-200" />
+
+                    <div className="flex items-center justify-between">
+                      <div className="h-7 w-28 animate-pulse rounded-lg bg-slate-200" />
+                      <div className="h-10 w-24 animate-pulse rounded-xl bg-slate-200" />
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : error ? (
-            <div className="rounded-[32px] border border-red-100 bg-white p-8 text-center shadow-sm">
-              <Building2 size={50} className="mx-auto text-red-400" />
+            <div className="flex min-h-[340px] flex-col items-center justify-center rounded-3xl border border-red-200 bg-white px-6 py-12 text-center shadow-sm">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                <AlertCircle className="h-8 w-8" />
+              </div>
 
-              <h3 className="mt-4 text-2xl font-black text-slate-900">
-                Unable to load properties
+              <h3 className="mt-5 text-xl font-bold text-slate-950">
+                Properties could not be loaded
               </h3>
 
-              <p className="mx-auto mt-2 max-w-md text-slate-500">{error}</p>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                {error}
+              </p>
 
               <button
                 type="button"
-                onClick={() => window.location.reload()}
-                className="mt-6 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white transition hover:bg-blue-700"
+                onClick={() => void fetchProperties()}
+                className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
               >
-                Refresh Page
+                <RefreshCw className="h-4 w-4" />
+                Try Again
               </button>
             </div>
-          ) : filteredProperties.length === 0 ? (
-            <div className="rounded-[32px] border border-slate-200 bg-white p-8 text-center shadow-sm md:p-12">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-blue-50">
-                <Building2 size={42} className="text-blue-600" />
-              </div>
-
-              <h3 className="mt-5 text-2xl font-black text-slate-900">
-                No matching properties found
-              </h3>
-
-              <p className="mx-auto mt-2 max-w-lg text-slate-500">
-                Try changing the location, property type, or filter to see more
-                homes.
-              </p>
-
-              <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch("");
-                    setPropertyType("All");
-                    setSelectedFilter("All");
-                  }}
-                  className="rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white transition hover:bg-blue-700"
-                >
-                  Clear Search
-                </button>
-
-                <Link
-                  href="/list-property"
-                  className="rounded-2xl border border-slate-200 bg-white px-6 py-3 font-bold text-slate-700 transition hover:border-blue-600 hover:text-blue-600"
-                >
-                  Post a Property
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          ) : filteredProperties.length > 0 ? (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredProperties.map((property) => (
                 <PropertyCard key={property.id} property={property} />
               ))}
             </div>
+          ) : (
+            <div className="flex min-h-[360px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <Home className="h-8 w-8" />
+              </div>
+
+              <h3 className="mt-5 text-xl font-bold text-slate-950">
+                {hasActiveFilters
+                  ? "No matching properties found"
+                  : "No properties available yet"}
+              </h3>
+
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                {hasActiveFilters
+                  ? "Try another location, property type, or clear the active filters."
+                  : "New brokerage-free properties will appear here after owners list them."}
+              </p>
+
+              {hasActiveFilters ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+                >
+                  Clear Filters
+                </button>
+              ) : (
+                <Link
+                  href="/list-property"
+                  className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+                >
+                  List a Property
+                </Link>
+              )}
+            </div>
           )}
-        </div>
-      </section>
+        </section>
 
-      <section className="mx-auto mt-14 w-full max-w-7xl px-4 md:px-8">
-        <div className="overflow-hidden rounded-[34px] bg-[#0f172a] px-6 py-10 text-center text-white shadow-2xl md:px-12 md:py-14">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-blue-300">
-            Have a property?
-          </p>
+        <section className="mx-auto mt-14 w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="overflow-hidden rounded-3xl bg-slate-950 px-6 py-8 text-white shadow-xl sm:px-10 sm:py-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
+                  <ShieldCheck className="h-4 w-4" />
+                  Direct owner connection
+                </div>
 
-          <h2 className="mx-auto mt-3 max-w-3xl text-3xl font-black leading-tight md:text-4xl">
-            List your property and connect directly with genuine renters.
-          </h2>
+                <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
+                  Own a property? Find tenants without a broker.
+                </h2>
 
-          <p className="mx-auto mt-4 max-w-xl leading-7 text-slate-300">
-            Post your room, flat, PG, or apartment and manage renter enquiries
-            without brokerage.
-          </p>
+                <p className="mt-3 text-sm leading-6 text-slate-300 sm:text-base">
+                  Add property photos, rent, amenities and location. Interested
+                  tenants can contact you directly through DirectNest.
+                </p>
+              </div>
 
-          <Link
-            href="/list-property"
-            className="mt-7 inline-flex rounded-2xl bg-blue-600 px-7 py-4 font-bold text-white shadow-lg transition hover:bg-blue-700"
-          >
-            Post Your Property
-          </Link>
-        </div>
-      </section>
+              <Link
+                href="/list-property"
+                className="inline-flex h-12 shrink-0 items-center justify-center rounded-xl bg-white px-6 text-sm font-bold text-slate-950 transition hover:bg-blue-50 active:scale-[0.98]"
+              >
+                List Property Free
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
 
       <BottomNav />
-    </main>
+    </div>
   );
 }

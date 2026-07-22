@@ -18,11 +18,20 @@ export type Property = {
   id: string;
   title: string;
   location: string;
-  rent: string;
+  rent: string | number;
   type: string;
   description: string;
   contact: string;
   imageUrls?: string[];
+  images?: string[];
+  amenities?: string[];
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  verified?: boolean;
+  isVerified?: boolean;
+  noBrokerage?: boolean;
+  createdAt?: unknown;
 };
 
 type PropertyCardProps = {
@@ -31,8 +40,11 @@ type PropertyCardProps = {
 
 const SAVED_PROPERTIES_KEY = "directnest-saved-properties";
 
-function formatPhoneNumber(contact: string) {
-  const digits = contact.replace(/\D/g, "");
+function formatPhoneNumber(contact: string | number | null | undefined) {
+  const contactValue =
+    contact === null || contact === undefined ? "" : String(contact);
+
+  const digits = contactValue.replace(/\D/g, "");
 
   if (digits.startsWith("91") && digits.length === 12) {
     return digits.slice(2);
@@ -45,34 +57,71 @@ function formatPhoneNumber(contact: string) {
   return digits;
 }
 
-function formatRent(rent: string) {
-  const numericRent = rent.replace(/[^\d]/g, "");
+function formatRent(rent: string | number | null | undefined) {
+  if (rent === null || rent === undefined || rent === "") {
+    return "Price on request";
+  }
 
-  if (!numericRent) {
+  if (typeof rent === "number") {
+    if (!Number.isFinite(rent)) {
+      return "Price on request";
+    }
+
+    return rent.toLocaleString("en-IN");
+  }
+
+  const numericRent = Number(rent.replace(/[^\d.-]/g, ""));
+
+  if (!Number.isFinite(numericRent)) {
     return rent;
   }
 
-  return Number(numericRent).toLocaleString("en-IN");
+  return numericRent.toLocaleString("en-IN");
+}
+
+function getPropertyImages(property: Property) {
+  if (Array.isArray(property.imageUrls) && property.imageUrls.length > 0) {
+    return property.imageUrls.filter(
+      (image): image is string =>
+        typeof image === "string" && image.trim().length > 0
+    );
+  }
+
+  if (Array.isArray(property.images) && property.images.length > 0) {
+    return property.images.filter(
+      (image): image is string =>
+        typeof image === "string" && image.trim().length > 0
+    );
+  }
+
+  return [];
 }
 
 export default function PropertyCard({ property }: PropertyCardProps) {
   const [isSaved, setIsSaved] = useState(false);
   const [isShared, setIsShared] = useState(false);
 
-  const phoneNumber = formatPhoneNumber(property.contact || "");
+  const phoneNumber = formatPhoneNumber(property.contact);
+  const propertyImages = getPropertyImages(property);
 
-  const whatsappMessage = `Hi, I am interested in your property "${property.title}" located at ${property.location}. I found it on DirectNest.`;
-
-  const propertyUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/property/${property.id}`
-      : `/property/${property.id}`;
+  const whatsappMessage = `Hi, I am interested in your property "${
+    property.title || "Property"
+  }" located at ${
+    property.location || "the listed location"
+  }. I found it on DirectNest.`;
 
   useEffect(() => {
     try {
-      const savedProperties = JSON.parse(
-        localStorage.getItem(SAVED_PROPERTIES_KEY) || "[]"
-      ) as string[];
+      const storedValue = localStorage.getItem(SAVED_PROPERTIES_KEY);
+      const parsedValue: unknown = storedValue
+        ? JSON.parse(storedValue)
+        : [];
+
+      const savedProperties = Array.isArray(parsedValue)
+        ? parsedValue.filter(
+            (value): value is string => typeof value === "string"
+          )
+        : [];
 
       setIsSaved(savedProperties.includes(property.id));
     } catch {
@@ -82,9 +131,16 @@ export default function PropertyCard({ property }: PropertyCardProps) {
 
   const handleSave = () => {
     try {
-      const savedProperties = JSON.parse(
-        localStorage.getItem(SAVED_PROPERTIES_KEY) || "[]"
-      ) as string[];
+      const storedValue = localStorage.getItem(SAVED_PROPERTIES_KEY);
+      const parsedValue: unknown = storedValue
+        ? JSON.parse(storedValue)
+        : [];
+
+      const savedProperties = Array.isArray(parsedValue)
+        ? parsedValue.filter(
+            (value): value is string => typeof value === "string"
+          )
+        : [];
 
       const updatedProperties = savedProperties.includes(property.id)
         ? savedProperties.filter((id) => id !== property.id)
@@ -102,21 +158,37 @@ export default function PropertyCard({ property }: PropertyCardProps) {
   };
 
   const handleShare = async () => {
+    const propertyPath = `/property/${property.id}`;
+
+    const propertyUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}${propertyPath}`
+        : propertyPath;
+
     const shareData = {
-      title: property.title,
-      text: `${property.title} in ${property.location} for ₹${formatRent(
-        property.rent
-      )}/month`,
+      title: property.title || "DirectNest Property",
+      text: `${property.title || "Property"} in ${
+        property.location || "the listed location"
+      } for ₹${formatRent(property.rent)}/month`,
       url: propertyUrl,
     };
 
     try {
-      if (navigator.share) {
+      if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share(shareData);
         return;
       }
 
-      await navigator.clipboard.writeText(propertyUrl);
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+      ) {
+        await navigator.clipboard.writeText(propertyUrl);
+      } else if (typeof window !== "undefined") {
+        window.prompt("Copy this property link:", propertyUrl);
+      }
+
       setIsShared(true);
 
       window.setTimeout(() => {
@@ -129,29 +201,40 @@ export default function PropertyCard({ property }: PropertyCardProps) {
     }
   };
 
+  const showVerifiedBadge =
+    property.verified !== false && property.isVerified !== false;
+
+  const showNoBrokerageBadge = property.noBrokerage !== false;
+
   return (
     <article className="group overflow-hidden rounded-[30px] border border-slate-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl">
       <div className="relative overflow-hidden">
         <ImageSlider
-          images={property.imageUrls || []}
-          title={property.title}
+          images={propertyImages}
+          title={property.title || "Property"}
         />
 
         <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[calc(100%-72px)] flex-wrap gap-2 sm:left-4 sm:top-4">
-          <span className="rounded-full border border-white/60 bg-white/95 px-3 py-1.5 text-[11px] font-extrabold text-blue-600 shadow-sm backdrop-blur">
-            No Brokerage
-          </span>
+          {showNoBrokerageBadge && (
+            <span className="rounded-full border border-white/60 bg-white/95 px-3 py-1.5 text-[11px] font-extrabold text-blue-600 shadow-sm backdrop-blur">
+              No Brokerage
+            </span>
+          )}
 
-          <span className="flex items-center gap-1 rounded-full border border-white/60 bg-white/95 px-3 py-1.5 text-[11px] font-extrabold text-green-600 shadow-sm backdrop-blur">
-            <BadgeCheck size={14} />
-            Verified Owner
-          </span>
+          {showVerifiedBadge && (
+            <span className="flex items-center gap-1 rounded-full border border-white/60 bg-white/95 px-3 py-1.5 text-[11px] font-extrabold text-green-600 shadow-sm backdrop-blur">
+              <BadgeCheck size={14} />
+              Verified Owner
+            </span>
+          )}
         </div>
 
         <button
           type="button"
           onClick={handleSave}
-          aria-label={isSaved ? "Remove saved property" : "Save property"}
+          aria-label={
+            isSaved ? "Remove saved property" : "Save property"
+          }
           title={isSaved ? "Remove from saved" : "Save property"}
           className={`absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border shadow-md backdrop-blur transition sm:right-4 sm:top-4 ${
             isSaved
@@ -189,17 +272,22 @@ export default function PropertyCard({ property }: PropertyCardProps) {
 
           <div className="shrink-0 text-right">
             <p className="text-xl font-black text-blue-600">
-              ₹{formatRent(property.rent)}
+              {formatRent(property.rent) === "Price on request"
+                ? "Price on request"
+                : `₹${formatRent(property.rent)}`}
             </p>
 
-            <span className="text-xs font-semibold text-slate-400">
-              per month
-            </span>
+            {formatRent(property.rent) !== "Price on request" && (
+              <span className="text-xs font-semibold text-slate-400">
+                per month
+              </span>
+            )}
           </div>
         </div>
 
         <p className="mt-4 line-clamp-2 min-h-12 text-sm leading-6 text-slate-500">
-          {property.description || "No property description provided."}
+          {property.description ||
+            "No property description provided."}
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-3">
@@ -219,6 +307,11 @@ export default function PropertyCard({ property }: PropertyCardProps) {
           <a
             href={phoneNumber ? `tel:${phoneNumber}` : undefined}
             aria-disabled={!phoneNumber}
+            onClick={(event) => {
+              if (!phoneNumber) {
+                event.preventDefault();
+              }
+            }}
             className={`flex h-12 items-center justify-center gap-1.5 rounded-2xl text-sm font-bold transition ${
               phoneNumber
                 ? "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
@@ -226,7 +319,7 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             }`}
           >
             <Phone size={18} />
-            Call
+            <span>Call</span>
           </a>
 
           <a
@@ -237,9 +330,14 @@ export default function PropertyCard({ property }: PropertyCardProps) {
                   )}`
                 : undefined
             }
-            target="_blank"
-            rel="noopener noreferrer"
+            target={phoneNumber ? "_blank" : undefined}
+            rel={phoneNumber ? "noopener noreferrer" : undefined}
             aria-disabled={!phoneNumber}
+            onClick={(event) => {
+              if (!phoneNumber) {
+                event.preventDefault();
+              }
+            }}
             className={`flex h-12 items-center justify-center gap-1.5 rounded-2xl text-sm font-bold transition ${
               phoneNumber
                 ? "bg-green-600 text-white shadow-sm hover:bg-green-700"
@@ -247,7 +345,7 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             }`}
           >
             <MessageCircle size={18} />
-            WhatsApp
+            <span className="truncate">WhatsApp</span>
           </a>
 
           <button
@@ -258,12 +356,12 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             {isShared ? (
               <>
                 <Check size={18} className="text-green-600" />
-                Copied
+                <span>Copied</span>
               </>
             ) : (
               <>
                 <Share2 size={18} />
-                Share
+                <span>Share</span>
               </>
             )}
           </button>
